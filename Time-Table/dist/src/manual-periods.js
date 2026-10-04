@@ -35,13 +35,14 @@ export function validateManualReservation(reservation, subject = {}, template = 
   if (!required || slots.length !== required) errors.push(`${subject?.name || reservation?.subjectId || 'Subject'} requires exactly ${required} selected period(s); received ${slots.length}.`);
   if (slots.some(slot => !days.has(slot.day))) errors.push('Every selected period must use a day from the class template.');
   if (slots.some(slot => !teachingNumbers.has(slot.period))) errors.push('Manual periods must be teaching periods; breaks and lunch cannot be selected.');
+  if (kind === 'LIBRARY' && slots.some(slot => slot.period < 3)) errors.push('Library periods cannot be placed in Period 1 or Period 2; the earliest is Period 3.');
   if (duplicate.length) errors.push('A manual reservation cannot select the same day and period more than once.');
   if (slots.some(slot => occupied.has(`${slot.day}-${slot.period}`))) errors.push('A selected period is already reserved by another manual subject.');
 
   const sameDay = slots.length > 0 && slots.every(slot => slot.day === slots[0].day);
   const sortedPeriods = slots.map(slot => slot.period).sort((a, b) => a - b);
   const continuous = sameDay && sortedPeriods.every((period, index) => index === 0 || period === sortedPeriods[index - 1] + 1);
-  if ((kind === 'LAB' || mode === 'continuous') && !continuous) errors.push(`${kind === 'LAB' ? 'Lab' : kind} periods must be consecutive on one day.`);
+  if ((kind === 'LAB' || (mode === 'continuous' && kind !== 'LIBRARY')) && !continuous) errors.push(`${kind === 'LAB' ? 'Lab' : kind} periods must be consecutive on one day.`);
   if (kind === 'LAB' && reservation?.session) {
     const lunchNumber = (template?.periods || []).map((period, index) => ({ number: Number(period.period_number ?? index + 1), type: String(period.type || '').toUpperCase() })).find(period => period.type === 'LUNCH')?.number;
     if (reservation.session === 'before_lunch' && lunchNumber !== undefined && sortedPeriods.some(period => period >= lunchNumber)) errors.push('The Lab block must be entirely before lunch.');

@@ -41,6 +41,13 @@ test('validates separate placement/library periods independently', () => {
   assert.match(validateManualReservation({ subjectId: 'LIB', kind: 'LIBRARY', slots: [{ day: 'MON', period: 7 }, { day: 'MON', period: 7 }, { day: 'WED', period: 3 }], mode: 'separate' }, subject, template).join(' '), /exactly|duplicate|different days/i);
 });
 
+test('blocks Library in Period 1 and Period 2 and never forces it continuous', () => {
+  const subject = { id: 'LIB', libraryPeriods: 3 };
+  assert.match(validateManualReservation({ subjectId: 'LIB', kind: 'LIBRARY', slots: [{ day: 'MON', period: 1 }, { day: 'TUE', period: 6 }, { day: 'WED', period: 3 }], mode: 'separate' }, subject, template).join(' '), /Period 1 or Period 2/);
+  assert.match(validateManualReservation({ subjectId: 'LIB', kind: 'LIBRARY', slots: [{ day: 'MON', period: 2 }, { day: 'TUE', period: 6 }, { day: 'WED', period: 3 }], mode: 'separate' }, subject, template).join(' '), /Period 1 or Period 2/);
+  assert.deepEqual(validateManualReservation({ subjectId: 'LIB', kind: 'LIBRARY', mode: 'continuous', slots: [{ day: 'MON', period: 6 }, { day: 'TUE', period: 3 }, { day: 'WED', period: 7 }], requiredPeriods: 3 }, subject, template), []);
+});
+
 test('treats padded one-cell class headings as class markers, not subjects', () => {
   const result = normalizeRows([
     ['AIDS', '', '', '', '', ''],

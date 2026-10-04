@@ -85,7 +85,7 @@ test('renders staff roles and subjects only for the selected class', () => {
   assert.doesNotMatch(html, /CSE Subject/);
 });
 
-test('renders one starting Period and one Day selector for each Placement and Library subject', () => {
+test('renders two Period selectors with one shared Day selector for Placement, and one pair for Library', () => {
   const html = renderSetup({
     activeClass: 'AIDS', classes: ['AIDS'], subjects: [
       { id: 'p', className: 'AIDS', acronym: 'PT', code: 'P1', name: 'Placement', teacher: 'T1', theoryPeriods: 2, labPeriods: 0, manualKind: 'placement' },
@@ -93,26 +93,32 @@ test('renders one starting Period and one Day selector for each Placement and Li
     ], staff: [], labs: [], manualReservations: [], manualSelectionRequired: true
   });
   assert.match(html, /Placement and Library/);
-  assert.match(html, /2 continuous periods/);
-  assert.match(html, /3 continuous periods/);
+  assert.match(html, /2 selected periods/);
+  assert.match(html, /3 fixed periods/);
   assert.doesNotMatch(html, /data-manual-mode="p"/);
   assert.doesNotMatch(html, /data-manual-mode="l"/);
   assert.match(html, /for every class in the class selector/);
   assert.doesNotMatch(html, /data-extracurricular="p"/);
   assert.doesNotMatch(html, /data-extracurricular="l"/);
-  for (const id of ['p', 'l']) {
-    assert.doesNotMatch(html, new RegExp(`data-slot-index`, 'g'));
-    assert.equal((html.match(new RegExp(`data-manual-period="${id}"`, 'g')) || []).length, 1);
-    assert.equal((html.match(new RegExp(`data-manual-day="${id}"`, 'g')) || []).length, 1);
-  }
-  assert.match(html, />Period<\/span><select data-manual-period="p">/);
-  assert.match(html, />Day<\/span><select data-manual-day="p">/);
-  const placementPeriod = html.match(/<select data-manual-period="p">([\s\S]*?)<\/select>/)[1];
+  assert.doesNotMatch(html, /data-slot-index/);
+  assert.equal((html.match(/<select data-manual-period="p"/g) || []).length, 2);
+  assert.equal((html.match(/<select data-manual-day="p"/g) || []).length, 1);
+  assert.equal((html.match(/<select data-manual-period="l"/g) || []).length, 1);
+  assert.equal((html.match(/<select data-manual-day="l"/g) || []).length, 1);
+  assert.match(html, />Period 1<\/span><select data-manual-period="p" data-manual-index="0">/);
+  assert.match(html, />Period 2<\/span><select data-manual-period="p" data-manual-index="1">/);
+  assert.match(html, />Day<\/span><select data-manual-day="p" data-manual-index="0">/);
+  assert.match(html, />Period<\/span><select data-manual-period="l" data-manual-index="0">/);
+  assert.match(html, />Day<\/span><select data-manual-day="l" data-manual-index="0">/);
+  assert.match(html, /<div class="manual-pair">/);
+  const placementPeriod = html.match(/<select data-manual-period="p" data-manual-index="0">([\s\S]*?)<\/select>/)[1];
   assert.match(placementPeriod, /<option value="7"\s*>7<\/option>/);
-  assert.doesNotMatch(placementPeriod, /<option value="8"/);
-  const libraryPeriod = html.match(/<select data-manual-period="l">([\s\S]*?)<\/select>/)[1];
-  assert.match(libraryPeriod, /<option value="6"\s*>6<\/option>/);
-  assert.doesNotMatch(libraryPeriod, /<option value="7"/);
+  assert.match(placementPeriod, /<option value="8"\s*>8<\/option>/);
+  const libraryPeriod = html.match(/<select data-manual-period="l" data-manual-index="0">([\s\S]*?)<\/select>/)[1];
+  assert.match(libraryPeriod, /<option value="3"\s*>3<\/option>/);
+  assert.match(libraryPeriod, /<option value="8"\s*>8<\/option>/);
+  assert.doesNotMatch(libraryPeriod, /<option value="1"/);
+  assert.doesNotMatch(libraryPeriod, /<option value="2"/);
 });
 
 test('preselects the saved starting period and day of a Placement reservation', () => {
@@ -123,7 +129,8 @@ test('preselects the saved starting period and day of a Placement reservation', 
       { subjectId: 'p', className: 'AIDS', kind: 'PLACEMENT', mode: 'continuous', slots: [{ day: 'WED', period: 3 }, { day: 'WED', period: 4 }] }
     ]
   });
-  assert.match(html, /<select data-manual-period="p">[\s\S]*?<option value="3" selected>3<\/option>/);
-  assert.match(html, /<select data-manual-day="p">[\s\S]*?<option value="WED" selected>Wednesday<\/option>/);
+  assert.match(html, /<select data-manual-period="p" data-manual-index="0">[\s\S]*?<option value="3" selected>3<\/option>/);
+  assert.match(html, /<select data-manual-day="p" data-manual-index="0">[\s\S]*?<option value="WED" selected>Wednesday<\/option>/);
+  assert.match(html, /<select data-manual-period="p" data-manual-index="1">[\s\S]*?<option value="4" selected>4<\/option>/);
   assert.match(html, /Periods 3-4/);
 });

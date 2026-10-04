@@ -60,10 +60,22 @@ function syncManualReservation(subjectId) {
   const kind = subject.labPeriods > 0 ? 'LAB' : String(subject.manualKind || '').toUpperCase();
   if (!kind) return;
   const required = Number(subject.labPeriods || subject.placementPeriods || subject.libraryPeriods || subject.theoryPeriods || 0);
-  const startDay = document.querySelector(`[data-manual-day="${CSS.escape(subjectId)}"]`)?.value || document.querySelector(`[data-lab-day="${CSS.escape(subjectId)}"]`)?.value || '';
-  const startPeriod = Number(document.querySelector(`[data-manual-period="${CSS.escape(subjectId)}"]`)?.value || document.querySelector(`[data-lab-period="${CSS.escape(subjectId)}"]`)?.value || 0);
-  const slots = startDay && startPeriod ? Array.from({ length: required }, (_, offset) => ({ day: startDay, period: startPeriod + offset })) : [];
-  const reservation = { subjectId, className: subject.className, kind, mode: 'continuous', session: '', slots };
+  const key = CSS.escape(subjectId);
+  const startDay = document.querySelector(`[data-manual-day="${key}"]`)?.value || document.querySelector(`[data-lab-day="${key}"]`)?.value || '';
+  const startPeriod = Number(document.querySelector(`[data-manual-period="${key}"]`)?.value || document.querySelector(`[data-lab-period="${key}"]`)?.value || 0);
+  const isLibrary = kind === 'LIBRARY';
+  const periodSelects = [...document.querySelectorAll(`[data-manual-period="${key}"][data-manual-index]`)];
+  const sharedDay = document.querySelector(`[data-manual-day="${key}"][data-manual-index="0"]`)?.value || '';
+  const explicitPeriods = periodSelects.map(node => Number(node.value || 0)).filter(Boolean);
+  let slots = [];
+  if (sharedDay && explicitPeriods.length === periodSelects.length && periodSelects.length > 1) slots = explicitPeriods.map(period => ({ day: sharedDay, period }));
+  else if (startDay && startPeriod) {
+    slots = Array.from({ length: required }, (_, offset) => {
+      if (isLibrary) return { day: DAYS[(DAYS.indexOf(startDay) + offset + DAYS.length) % DAYS.length], period: startPeriod };
+      return { day: startDay, period: startPeriod + offset };
+    });
+  }
+  const reservation = { subjectId, className: subject.className, kind, mode: isLibrary ? 'separate' : 'continuous', session: '', slots };
   const template = { days: DAYS, periods: [...Array.from({ length: 4 }, (_, index) => ({ period_number: index + 1, type: 'TEACHING' })), { period_number: 4.5, type: 'LUNCH' }, ...Array.from({ length: 4 }, (_, index) => ({ period_number: index + 5, type: 'TEACHING' }))] };
   const errors = validateManualReservation(reservation, subject, template);
   if (errors.length) { toast(errors[0]); return; }

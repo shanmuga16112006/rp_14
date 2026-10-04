@@ -9,9 +9,20 @@ export const SLOT_DEFS = [
   { period: null, label: 'BREAK', teaching: false }, { period: 6, label: '03.10–03.50', teaching: true },
   { period: 7, label: '03.50–04.30', teaching: true }
 ];
+export const ACTIVITY_TEACHING_RUNS = [[2, 3], [4, 5], [6, 7]];
+export function extracurricularStarts(length) {
+  const starts = [];
+  for (const [first, last] of ACTIVITY_TEACHING_RUNS) {
+    for (let start = first; start <= last; start++) {
+      if (start + length - 1 <= last) starts.push(start);
+    }
+  }
+  return starts;
+}
 export const subjectKeyOf = subject => subject.code || subject.subjectCode || subject.acronym || subject.id || subject.subjectId;
 const manualSubjectKind = subject => String(subject?.manualKind || subject?.kind || '').toLowerCase();
 const isManualCategory = subject => ['placement', 'library'].includes(manualSubjectKind(subject));
+const isLibrarySlot = (subject, kind) => kind === 'library' || manualSubjectKind(subject) === 'library';
 
 export function createDefaultSlots() { return SLOT_DEFS.map((slot, index) => ({ ...slot, index })); }
 const emptyWeek = () => Object.fromEntries(DAYS.map(day => [day, Array(8).fill(null)]));
@@ -97,19 +108,54 @@ export function feasibilityDiagnostics(model) {
   for (const subject of model.subjects.filter(item => item.theoryPeriods > 0 && item.isExtracurricular)) {
     const length = subject.theoryPeriods;
     const teacher = teacherName(subject);
-    if (length > 7) {
-      diagnostics.push({ rule: 'R18', severity: 'error', className: subject.className, subjectId: subject.id, message: `${subject.name} needs ${length} consecutive periods starting after Period 1, but only ${7} teaching slots exist after the first period of a day.` });
+    const starts = extracurricularStarts(length);
+    if (!starts.length) {
+      diagnostics.push({ rule: 'R23', severity: 'error', className: subject.className, subjectId: subject.id, message: `${subject.name} needs ${length} consecutive periods starting at Period 3 or later without crossing a Break or Lunch period, but the longest uninterrupted teaching block after Period 2 is only 2 periods.` });
       continue;
     }
-    const anyWindow = DAYS.some(day => {
-      for (let start = 1; start <= 8 - length; start++) {
-        const periods = Array.from({ length }, (_, offset) => start + offset);
-        if (periods.every(period => period < 8 && !unavailable(model, teacher, day, period))) return true;
-      }
-      return false;
-    });
+    const anyWindow = DAYS.some(day => starts.some(start => {
+      const periods = Array.from({ length }, (_, offset) => start + offset);
+      return periods.every(period => period < 8 && !unavailable(model, teacher, day, period));
+    }));
     if (!anyWindow) {
-      diagnostics.push({ rule: 'R18', severity: 'error', className: subject.className, subjectId: subject.id, message: `${subject.name} (${length} continuous periods starting after Period 1) cannot be placed because ${teacher} is unavailable during every eligible window on every day.` });
+      diagnostics.push({ rule: 'R23', severity: 'error', className: subject.className, subjectId: subject.id, message: `${subject.name} (${length} consecutive periods starting at Period 3 or later without crossing a Break or Lunch) cannot be placed because ${teacher} is unavailable during every eligible window on every day.` });
+    }
+  }
+  return diagnostics;
+}
+
+export function checkExtracurricularSchedule(schedule, model) {
+  const diagnostics = [];
+  const forClass = schedule?.className;
+  const subjects = model.subjects.filter(subject => subject.theoryPeriods > 0 && subject.isExtracurricular && (!forClass || subject.className === forClass));
+  const runOf = period => ACTIVITY_TEACHING_RUNS.findIndex(([first, last]) => period >= first && period <= last);
+  for (const subject of subjects) {
+    const length = Number(subject.theoryPeriods);
+    const placed = DAYS.flatMap(day => (schedule[day] || []).map((cell, period) => ({ day, period, cell }))
+      .filter(entry => entry.cell?.kind === 'activity' && entry.cell.subjectId === subject.id));
+    if (!placed.length) continue;
+    const base = { rule: 'R23', severity: 'error', className: subject.className, subjectId: subject.id };
+    if (placed.length !== length) {
+      diagnostics.push({ ...base, message: `${subject.name} must occupy exactly ${length} consecutive period${length === 1 ? '' : 's'}, but ${placed.length} extracurricular period${placed.length === 1 ? '' : 's'} were placed. R23 forbids splitting or shortening the block.` });
+      continue;
+    }
+    const days = new Set(placed.map(entry => entry.day));
+    const periods = placed.map(entry => entry.period).sort((left, right) => left - right);
+    if (days.size !== 1) {
+      diagnostics.push({ ...base, message: `${subject.name} must occupy one uninterrupted block on a single day, but its ${length} periods are spread across ${days.size} days. R23 forbids splitting the block.` });
+      continue;
+    }
+    const day = placed[0].day;
+    if (periods.some((period, index) => index > 0 && period !== periods[index - 1] + 1)) {
+      diagnostics.push({ ...base, day, message: `${subject.name} must occupy consecutive periods without a gap, but its periods on ${day} are ${periods.map(period => period + 1).join(', ')}. R23 forbids splitting or shortening the block.` });
+      continue;
+    }
+    if (periods[0] <= 1) {
+      diagnostics.push({ ...base, day, period: periods[0] + 1, message: `${subject.name} cannot be scheduled in Period ${periods[0] + 1}. Extracurricular subjects cannot start in Period 1 or Period 2; the first possible starting period is Period 3.` });
+      continue;
+    }
+    if (periods.some(period => runOf(period) === -1) || new Set(periods.map(runOf)).size !== 1) {
+      diagnostics.push({ ...base, day, message: `${subject.name} occupies ${periods.map(period => period + 1).join(', ')} on ${day}, which crosses a Break or Lunch period. R23 requires the whole block to sit inside one uninterrupted teaching run and forbids shortening or splitting it to fit.` });
     }
   }
   return diagnostics;
@@ -124,7 +170,8 @@ export function checkSchedule(schedule, model) {
       const record = teacherRecord(model, cell.teacher);
       if (cell.period === 0 && (isHodFor(record, schedule.className) || record.ccFor?.includes(schedule.className))) diagnostics.push({ rule: isHodFor(record, schedule.className) ? 'R1' : 'R11', severity: 'error', day, period: 1, message: `${cell.teacher} cannot teach Period 1 for this class.` });
       if (unavailable(model, cell.teacher, day, cell.period)) diagnostics.push({ rule: 'R17', severity: 'error', day, period: cell.period + 1, message: `${cell.teacher} is unavailable.` });
-      if (cell.kind === 'activity' && cell.period === 0) diagnostics.push({ rule: 'R19', severity: 'error', day, period: cell.period + 1, subjectId: cell.subjectId, message: 'Extracurricular subjects cannot be scheduled in Period 1.' });
+      if (cell.kind === 'activity' && cell.period <= 1) diagnostics.push({ rule: 'R23', severity: 'error', day, period: cell.period + 1, subjectId: cell.subjectId, message: `Extracurricular subjects cannot be scheduled in Period ${cell.period + 1}. The first possible starting period is Period 3.` });
+      if (cell.kind === 'library' && cell.period <= 1) diagnostics.push({ rule: 'R22', severity: 'error', day, period: cell.period + 1, subjectId: cell.subjectId, message: `Library periods cannot be scheduled in Period ${cell.period + 1}. The earliest Library placement is Period 3.` });
       if (cell.kind === 'theory') seen.set(cell.subjectId, (seen.get(cell.subjectId) || 0) + 1);
     }
     for (const [subjectId, count] of seen) {
@@ -137,9 +184,10 @@ export function checkSchedule(schedule, model) {
     }
     for (let i = 1; i < cells.length; i++) if (cells[i]?.kind === 'theory' && cells[i - 1]?.kind === 'theory' && cells[i].subjectId === cells[i - 1].subjectId) diagnostics.push({ rule: 'R3', severity: 'error', day, period: cells[i].period + 1, message: 'Same theory subject is scheduled in adjacent periods.' });
   }
-  const firstPeriodSubjects = DAYS.map(day => schedule[day]?.[0]?.subjectId).filter(Boolean);
+const firstPeriodSubjects = DAYS.map(day => schedule[day]?.[0]?.subjectId).filter(Boolean);
   const repeatedFirstPeriod = firstPeriodSubjects.find((subjectId, index) => firstPeriodSubjects.indexOf(subjectId) !== index);
   if (repeatedFirstPeriod) diagnostics.push({ rule: 'R20', severity: 'error', subjectId: repeatedFirstPeriod, message: 'The same subject cannot occupy Period 1 on more than one day.' });
+  diagnostics.push(...checkExtracurricularSchedule(schedule, model));
   return diagnostics;
 }
 
@@ -228,7 +276,8 @@ function generateTimetableAttempt(model, options = {}) {
     if (teacherBusy.get(busyKey)?.has(teacher) && !isCombinedSession(subject, day, period)) return false;
     const record = teacherRecord(model, teacher);
     if (period === 0 && (isHodFor(record, subject.className) || record.ccFor?.includes(subject.className))) return false;
-    if (kind === 'activity' && period === 0) return false;
+    if (kind === 'activity' && (period === 0 || period === 1)) return false;
+    if (isLibrarySlot(subject, kind) && (period === 0 || period === 1)) return false;
     if (!isCombinedSession(subject, day, period)) {
       if (teacherCrossClassConflict(teacher, day, period, subject.className)) return false;
       if (kind !== 'lab' && subjectPatternConflict(subjectKey, day, period, subject.className)) return false;
@@ -263,7 +312,8 @@ function generateTimetableAttempt(model, options = {}) {
     if (teacherBusy.get(busyKey)?.has(teacher) && !isCombinedSession(subject, day, period)) return false;
     const record = teacherRecord(model, teacher);
     if (period === 0 && (isHodFor(record, subject.className) || record.ccFor?.includes(subject.className))) return false;
-    if (kind === 'activity' && period === 0) return false;
+    if (kind === 'activity' && (period === 0 || period === 1)) return false;
+    if (isLibrarySlot(subject, kind) && (period === 0 || period === 1)) return false;
     if (!isCombinedSession(subject, day, period)) {
       if (teacherCrossClassConflict(teacher, day, period, subject.className)) return false;
       if (kind !== 'lab' && subjectPatternConflict(subjectKey, day, period, subject.className)) return false;
@@ -291,7 +341,8 @@ function generateTimetableAttempt(model, options = {}) {
     if (unavailable(model, teacher, day, period)) return `${teacher} is unavailable at ${day} P${period + 1}`;
     const record = teacherRecord(model, teacher);
     if (period === 0 && (isHodFor(record, subject.className) || record.ccFor?.includes(subject.className))) return `Period 1 is barred for the HOD/CC teacher ${teacher}`;
-    if (kind === 'activity' && period === 0) return `Period 1 is barred for activities`;
+    if (kind === 'activity' && period <= 1) return `Period ${period + 1} is barred for extracurricular activities`;
+    if (isLibrarySlot(subject, kind) && period <= 1) return `Period ${period + 1} is barred for Library periods (earliest is Period 3)`;
     if (!isCombinedSession(subject, day, period)) {
       if (teacherCrossClassConflict(teacher, day, period, subject.className)) return `${teacher} reaches ${day} P${period + 1} contiguously across another class`;
       if (kind !== 'lab' && subjectPatternConflict(subjectKeyOf(subject), day, period, subject.className)) return `${subjectKeyOf(subject)} collides with the same subject pattern in another class at ${day} P${period + 1}`;
@@ -405,7 +456,9 @@ function generateTimetableAttempt(model, options = {}) {
     const days = shuffle(DAYS).sort((left, right) => dayCount(left) - dayCount(right));
     for (const day of days) {
       if (dayCount(day) >= 2) { failures.add(`${day} already holds two activities`); continue; }
-      for (const start of shuffle(Array.from({ length: Math.max(0, 8 - length) }, (_, index) => index + 1))) {
+      const starts = extracurricularStarts(length);
+      if (!starts.length) { failures.add(`${subject.name} needs ${length} consecutive periods that cannot cross a Break or Lunch after Period 2`); continue; }
+      for (const start of shuffle(starts)) {
         const periods = Array.from({ length }, (_, offset) => start + offset);
         if (!periods.every(period => period < 8 && canPlaceAt(subject, day, period, 'activity'))) {
           for (const period of periods) {
@@ -423,15 +476,15 @@ function generateTimetableAttempt(model, options = {}) {
           placed = length;
           break;
         }
-        failures.add(`${day} P${start + 1} hits a Period-1 HOD/CC restriction`);
+        failures.add(`${day} P${start + 1} could not be reserved for the extracurricular block`);
       }
       if (placed) break;
     }
     if (placed < length) {
       const summary = [...failures].slice(0, 3).join('; ');
       diagnostics.push({
-        rule: 'R18', severity: 'error', className: subject.className, subjectId: subject.id,
-        message: `${subject.name} could not be placed for all ${length} extracurricular hour${length === 1 ? '' : 's'} (${placed}/${length} placed). ${summary ? `Blocked because: ${summary}.` : `No valid slot remained free.`}`,
+rule: 'R23', severity: 'error', className: subject.className, subjectId: subject.id,
+        message: `${subject.name} could not be placed for all ${length} extracurricular hour${length === 1 ? '' : 's'} (${placed}/${length} placed). ${summary ? `Blocked because: ${summary}.` : `No valid slot remained free.`} R23 keeps the activity unresolved instead of splitting, shortening, or moving it into an invalid slot.`,
       });
     }
   }
@@ -488,7 +541,7 @@ function generateTimetableAttempt(model, options = {}) {
       if (put(deficit, empty.day, empty.period)) continue;
       let repaired = false;
       for (const donorCell of DAYS.flatMap(day => schedule[day].map((cell, period) => ({ cell, day, period })))) {
-        if (!donorCell.cell || donorCell.cell.kind === 'lab' || donorCell.cell.kind === 'activity' || donorCell.cell.subjectId === deficit.id) continue;
+        if (!donorCell.cell || donorCell.cell.kind !== 'theory' || donorCell.cell.subjectId === deficit.id) continue;
         const donor = subjectsById.get(donorCell.cell.subjectId);
         if (!donor) continue;
         const original = { day: donorCell.day, period: donorCell.period };
@@ -663,3 +716,7 @@ export function checkCrossClass(schedules, model) {
   }
   return diagnostics;
 }
+
+
+
+
