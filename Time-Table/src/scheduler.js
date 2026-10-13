@@ -20,8 +20,16 @@ export function extracurricularStarts(length) {
   return starts;
 }
 export const subjectKeyOf = subject => subject.code || subject.subjectCode || subject.acronym || subject.id || subject.subjectId;
-const manualSubjectKind = subject => String(subject?.manualKind || subject?.kind || '').toLowerCase();
-const isManualCategory = subject => ['placement', 'library'].includes(manualSubjectKind(subject));
+const manualSubjectKind = subject => {
+  const k = String(subject?.manualKind || subject?.kind || '').toLowerCase();
+  if (k === 'sdc' || k.includes("skill development")) return 'placement';
+  return k;
+};
+const isManualCategory = subject => {
+  const k = manualSubjectKind(subject);
+  const n = ((subject?.name||'') + ' ' + (subject?.code||'') + ' ' + (subject?.acronym||'')).toLowerCase();
+  return ['placement', 'library'].includes(k) || n.includes('sdc') || n.includes('skill development');
+};
 const isLibrarySlot = (subject, kind) => kind === 'library' || manualSubjectKind(subject) === 'library';
 
 export function createDefaultSlots() { return SLOT_DEFS.map((slot, index) => ({ ...slot, index })); }
@@ -29,6 +37,7 @@ const emptyWeek = () => Object.fromEntries(DAYS.map(day => [day, Array(8).fill(n
 const teacherName = subject => subject.teacher.split(/[,;]/)[0].trim();
 const teacherRecord = (model, teacher) => model.teachers?.[teacher] || Object.values(model.teachers || {}).find(record => record.name === teacher || record.name?.startsWith(teacher)) || {};
 const isHodFor = (record, className) => record.hodFor?.includes(className) || record.isHod === true;
+const barsFirstPeriod = (record, className, day) => isHodFor(record, className) || (record.ccFor?.includes(className) && day !== 'MON');
 const externalHours = (model, teacher, day) => Number(teacherRecord(model, teacher).externalHours?.[day] || 0);
 const unavailable = (model, teacher, day, period) => (teacherRecord(model, teacher).unavailable || []).some(x => x.day === day && x.period === period);
 const fixedLabDays = (model, subjectId) => new Set((model.labs || []).filter(lab => lab.subjectId === subjectId).map(lab => lab.day).filter(Boolean));
@@ -168,7 +177,7 @@ export function checkSchedule(schedule, model) {
     const seen = new Map();
     for (const cell of cells.filter(Boolean)) {
       const record = teacherRecord(model, cell.teacher);
-      if (cell.period === 0 && (isHodFor(record, schedule.className) || record.ccFor?.includes(schedule.className))) diagnostics.push({ rule: isHodFor(record, schedule.className) ? 'R1' : 'R11', severity: 'error', day, period: 1, message: `${cell.teacher} cannot teach Period 1 for this class.` });
+      if (cell.period === 0 && barsFirstPeriod(record, schedule.className, day)) diagnostics.push({ rule: isHodFor(record, schedule.className) ? 'R1' : 'R11', severity: 'error', day, period: 1, message: `${cell.teacher} cannot teach Period 1 for this class.` });
       if (unavailable(model, cell.teacher, day, cell.period)) diagnostics.push({ rule: 'R17', severity: 'error', day, period: cell.period + 1, message: `${cell.teacher} is unavailable.` });
       if (cell.kind === 'activity' && cell.period <= 1) diagnostics.push({ rule: 'R23', severity: 'error', day, period: cell.period + 1, subjectId: cell.subjectId, message: `Extracurricular subjects cannot be scheduled in Period ${cell.period + 1}. The first possible starting period is Period 3.` });
       if (cell.kind === 'library' && cell.period <= 1) diagnostics.push({ rule: 'R22', severity: 'error', day, period: cell.period + 1, subjectId: cell.subjectId, message: `Library periods cannot be scheduled in Period ${cell.period + 1}. The earliest Library placement is Period 3.` });
@@ -275,7 +284,7 @@ function generateTimetableAttempt(model, options = {}) {
     if (unavailable(model, teacher, day, period)) return false;
     if (teacherBusy.get(busyKey)?.has(teacher) && !isCombinedSession(subject, day, period)) return false;
     const record = teacherRecord(model, teacher);
-    if (period === 0 && (isHodFor(record, subject.className) || record.ccFor?.includes(subject.className))) return false;
+    if (period === 0 && barsFirstPeriod(record, subject.className, day)) return false;
     if (kind === 'activity' && (period === 0 || period === 1)) return false;
     if (isLibrarySlot(subject, kind) && (period === 0 || period === 1)) return false;
     if (!isCombinedSession(subject, day, period)) {
@@ -311,7 +320,7 @@ function generateTimetableAttempt(model, options = {}) {
     if (unavailable(model, teacher, day, period)) return false;
     if (teacherBusy.get(busyKey)?.has(teacher) && !isCombinedSession(subject, day, period)) return false;
     const record = teacherRecord(model, teacher);
-    if (period === 0 && (isHodFor(record, subject.className) || record.ccFor?.includes(subject.className))) return false;
+    if (period === 0 && barsFirstPeriod(record, subject.className, day)) return false;
     if (kind === 'activity' && (period === 0 || period === 1)) return false;
     if (isLibrarySlot(subject, kind) && (period === 0 || period === 1)) return false;
     if (!isCombinedSession(subject, day, period)) {
@@ -340,7 +349,7 @@ function generateTimetableAttempt(model, options = {}) {
     if (teacherBusy.get(busyKey)?.has(teacher) && !isCombinedSession(subject, day, period)) return `${teacher} is already engaged at ${day} P${period + 1}`;
     if (unavailable(model, teacher, day, period)) return `${teacher} is unavailable at ${day} P${period + 1}`;
     const record = teacherRecord(model, teacher);
-    if (period === 0 && (isHodFor(record, subject.className) || record.ccFor?.includes(subject.className))) return `Period 1 is barred for the HOD/CC teacher ${teacher}`;
+    if (period === 0 && barsFirstPeriod(record, subject.className, day)) return `Period 1 is barred for the HOD/CC teacher ${teacher}${day === 'MON' ? '' : ' on this day'}`;
     if (kind === 'activity' && period <= 1) return `Period ${period + 1} is barred for extracurricular activities`;
     if (isLibrarySlot(subject, kind) && period <= 1) return `Period ${period + 1} is barred for Library periods (earliest is Period 3)`;
     if (!isCombinedSession(subject, day, period)) {

@@ -16,7 +16,7 @@ function allSlots(reservation) {
 }
 
 function requiredPeriods(subject, reservation) {
-  return Number(reservation?.requiredPeriods || (reservation?.kind === 'LAB' ? subject?.labPeriods : subject?.placementPeriods || subject?.libraryPeriods || subject?.theoryPeriods) || 0);
+  return Number(reservation?.requiredPeriods || (reservation?.kind === 'LAB' ? subject?.labPeriods : subject?.placementPeriods || subject?.libraryPeriods || subject?.theoryPeriods || 0) || 0);
 }
 
 export function validateManualReservation(reservation, subject = {}, template = {}, occupied = new Set()) {

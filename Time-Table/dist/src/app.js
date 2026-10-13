@@ -59,7 +59,9 @@ function syncManualReservation(subjectId) {
   if (!subject) return;
   const kind = subject.labPeriods > 0 ? 'LAB' : String(subject.manualKind || '').toUpperCase();
   if (!kind) return;
-  const required = Number(subject.labPeriods || subject.placementPeriods || subject.libraryPeriods || subject.theoryPeriods || 0);
+  const sName = ((subject.name || '') + ' ' + (subject.code || '') + ' ' + (subject.acronym || '')).toLowerCase();
+  const sdcExtra = (sName.includes('sdc') || sName.includes('skill development')) ? (subject.theoryPeriods || subject.placementPeriods || subject.libraryPeriods || 0) : 0;
+  const required = Number(subject.labPeriods || subject.placementPeriods || subject.libraryPeriods || subject.theoryPeriods || sdcExtra || 0);
   const key = CSS.escape(subjectId);
   const startDay = document.querySelector(`[data-manual-day="${key}"]`)?.value || document.querySelector(`[data-lab-day="${key}"]`)?.value || '';
   const startPeriod = Number(document.querySelector(`[data-manual-period="${key}"]`)?.value || document.querySelector(`[data-lab-period="${key}"]`)?.value || 0);

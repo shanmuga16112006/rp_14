@@ -821,3 +821,33 @@ test('R16 search failure report names the exact blocking day and reason', () => 
   }
 });
 
+test('allows a CC to teach Monday Period 1 but still bars every other Period 1', () => {
+  const model = {
+    classes: ['AIDS'],
+    teachers: { T2: { name: 'T2', unavailable: [], externalHours: {}, hodFor: [], ccFor: ['AIDS'] } },
+    subjects: [{ id: 'a', className: 'AIDS', acronym: 'A', code: 'A1', name: 'AIDS Subject', teacher: 'T2', theoryPeriods: 5, labPeriods: 0 }],
+    labs: []
+  };
+  const cell = { subjectId: 'a', subjectCode: 'A1', acronym: 'A', subjectName: 'AIDS Subject', teacher: 'T2', period: 0, kind: 'theory' };
+  const week = day => {
+    const schedule = Object.fromEntries(DAYS.map(item => [item, Array(8).fill(null)]));
+    schedule[day][0] = cell;
+    schedule.className = 'AIDS';
+    return schedule;
+  };
+  assert.equal(checkSchedule(week('MON'), model).some(item => item.rule === 'R11'), false);
+  assert.equal(checkSchedule(week('TUE'), model).some(item => item.rule === 'R11'), true);
+});
+
+test('places a CC subject in Monday Period 1 when it is otherwise eligible', () => {
+  const model = {
+    classes: ['AIDS'], settings: { days: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'], scheduleSeed: 9 },
+    teachers: { T2: { name: 'T2', unavailable: [], externalHours: {}, hodFor: [], ccFor: ['AIDS'] } },
+    subjects: [{ id: 'a', className: 'AIDS', acronym: 'A', code: 'A1', name: 'AIDS Subject', teacher: 'T2', theoryPeriods: 5, labPeriods: 0 }],
+    labs: []
+  };
+  const result = generateTimetable(model);
+  assert.equal(result.diagnostics.some(item => item.rule === 'R11'), false);
+  assert.equal(DAYS.some(day => result.schedules.AIDS[day][0]?.teacher === 'T2'), true);
+});
+

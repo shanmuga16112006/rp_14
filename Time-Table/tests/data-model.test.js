@@ -144,3 +144,15 @@ test('keeps every section in the input data as its own class', () => {
   assert.deepEqual(result.subjects.map(subject => subject.labDay), ['MON', 'TUE', 'FRI']);
   assert.deepEqual(result.subjects.map(subject => subject.labStart), [3, 5, 7]);
 });
+
+test('treats SDC and Skill Development Course as Placement manual periods', () => {
+  const result = normalizeRows([
+    ['Teacher Name', 'Subject Name', 'Subject Code', 'Class Name', 'Periods Required'],
+    ['T1', 'SDC', 'SDC1', 'AIDS', 2],
+    ['T2', 'Skill Development Course', 'SDC2', 'AIDS', 1],
+    ['T3', 'Placement', 'PL1', 'AIDS', 2]
+  ]);
+  assert.deepEqual(result.subjects.map(subject => subject.manualKind), ['placement', 'placement', 'placement']);
+  assert.deepEqual(result.subjects.map(subject => subject.placementPeriods), [2, 1, 2]);
+  assert.equal(result.subjects.some(subject => subject.labPeriods > 0), false);
+});

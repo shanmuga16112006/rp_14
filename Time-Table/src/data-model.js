@@ -71,8 +71,10 @@ export function normalizeRows(rows) {
     const className = value('className') || activeClass || 'Unassigned';
     if (!classes.includes(className)) classes.push(className);
     const teacher = extractTeacherNames(value('teacher')).join('; ');
-    const labDetected = parsed.labPeriods > 0 || /lab/i.test(value('name') + value('code'));
-    const manualKind = /placement/i.test(value('name') + value('code')) ? 'placement' : /library/i.test(value('name') + value('code')) ? 'library' : '';
+    const nameCode = (value('name') + ' ' + value('code')).toLowerCase();
+    const labDetected = parsed.labPeriods > 0 || /lab/i.test(nameCode);
+    const isSDC = /\bsdc\b|\bskill\s+development\s+course\b/i.test(value('name') + ' ' + value('code'));
+    const manualKind = isSDC || /placement/i.test(nameCode) ? 'placement' : /library/i.test(nameCode) ? 'library' : '';
     const theoryPeriods = labDetected && parsed.labPeriods === 0 ? 0 : parsed.theoryPeriods;
     const labPeriods = labDetected && parsed.labPeriods === 0 ? parsed.theoryPeriods : parsed.labPeriods;
     const subject = {
@@ -86,6 +88,12 @@ export function normalizeRows(rows) {
       labStart: columns.labStart >= 0 ? Number(value('labStart')) || null : null,
       labLength: columns.labLength >= 0 ? Number(value('labLength')) || labPeriods || null : labPeriods || null
     };
+    if (manualKind === 'placement') {
+      subject.placementPeriods = theoryPeriods || parsed.theoryPeriods || parsed.labPeriods || 0;
+    }
+    if (manualKind === 'library') {
+      subject.libraryPeriods = theoryPeriods || parsed.theoryPeriods || parsed.labPeriods || 0;
+    }
     if (subject.code || subject.name || subject.acronym) subjects.push(subject);
   }
   const teachers = Object.fromEntries([...new Set(subjects.flatMap(s => extractTeacherNames(s.teacher)))].map(name => [name, { name, initials: name.split(/\s+/).map(part => part[0]).join('').slice(0, 3).toUpperCase(), unavailable: [], externalHours: {}, hodFor: [], ccFor: [] }]));

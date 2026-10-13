@@ -29,8 +29,8 @@ Each subject should receive a Period-1 slot at least once per week whenever poss
 R10 — No continuous periods across classes for a teacher
 A teacher should not have continuous periods across different classes (e.g. Class X period 1 → Class Y period 2 is avoided; a gap, e.g. period 3, is acceptable).
 
-R11 — CC excluded from Period 1 of their own class
-The staff member who is CC of a specific class is never assigned Period 1 for that class.
+R11 — CC excluded from Period 1 of their own class (except Monday)
+The staff member who is CC of a specific class is never assigned Period 1 for that class, except on Monday, where Period 1 is permitted. This rule applies whenever CC is present in the input, so the generator must not reject or move a CC period merely because it is Monday Period 1.
 
 R12 — Lab-triggered exception for same-day repeat
 If subject S has an externally-allotted lab on day D, exactly one theory period of S is additionally permitted on D — separate from the R2a weekly-shortfall fallback.
@@ -60,3 +60,6 @@ A subject must not form a continuous column or row pattern across different clas
 
 R22 — No empty periods when a full 48-period week is required (new)
 If a class requires all 48 teaching periods (input demand equals weekly capacity), the timetable must contain all 48 with no empty periods. Generation detects any empty slot, attempts to backfill the most under-allocated subject into it first (then any eligible subject), and rechecks all rules afterward; the CAPACITY diagnostic reports only what remains genuinely unfillable.
+
+R24 — Placement and SDC equivalence (new)
+Placement, SDC, and Skill Development Course are equivalent labels. If any of these names is found in the input, the system must automatically recognize the subject as a Placement-type manually selected period and handle it exactly like the existing manually selected Placement/Library periods. The system must not create separate periods for Placement and SDC when they refer to the same input period.
