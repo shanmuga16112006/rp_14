@@ -9,9 +9,18 @@ export const SLOT_DEFS = [
   { period: null, label: 'BREAK', teaching: false }, { period: 6, label: '03.10–03.50', teaching: true },
   { period: 7, label: '03.50–04.30', teaching: true }
 ];
+export const ACTIVITY_TEACHING_RUNS = [[2, 3], [4, 5], [6, 7]];
 export function extracurricularStarts(length) {
   const starts = [];
-  for (let start = 2; start + length - 1 <= 7; start++) starts.push(start);
+  if (length > 2) {
+    for (let start = 2; start + length - 1 <= 7; start++) starts.push(start);
+    return starts;
+  }
+  for (const [first, last] of ACTIVITY_TEACHING_RUNS) {
+    for (let start = first; start <= last; start++) {
+      if (start + length - 1 <= last) starts.push(start);
+    }
+  }
   return starts;
 }
 export const subjectKeyOf = subject => subject.code || subject.subjectCode || subject.acronym || subject.id || subject.subjectId;
@@ -155,6 +164,14 @@ export function checkExtracurricularSchedule(schedule, model) {
     }
     if (periods[0] <= 1) {
       diagnostics.push({ ...base, day, period: periods[0] + 1, message: `${subject.name} cannot be scheduled in Period ${periods[0] + 1}. Extracurricular subjects cannot start in Period 1 or Period 2; the first possible starting period is Period 3.` });
+      continue;
+    }
+    if (length <= 2) {
+      const runOf = period => ACTIVITY_TEACHING_RUNS.findIndex(([first, last]) => period >= first && period <= last);
+      if (periods.some(period => runOf(period) === -1) || new Set(periods.map(runOf)).size !== 1) {
+        const label = `A ${length}-period extracurricular activity must stay inside one uninterrupted teaching run and may not cross a Break or Lunch; only activities of 3 or more periods may span a Break or Lunch.`;
+        diagnostics.push({ ...base, day, message: `${subject.name} occupies ${periods.map(period => period + 1).join(', ')} on ${day}, which crosses a Break or Lunch. ${label}` });
+      }
     }
   }
   return diagnostics;

@@ -330,8 +330,11 @@ test('R23 rejects a shortened or split extracurricular block', () => {
   assert.match(gapped[0].message, /consecutive periods without a gap/);
 });
 
-test('R23 allows a continuous extracurricular block to span Break and Lunch columns', () => {
-  assert.deepEqual(checkExtracurricularSchedule(activityWeek([3, 4]), activityModel), []);
+test('R23 forbids a 2-period block from crossing Break/Lunch but allows a 3-period block to span them', () => {
+  const crossing = checkExtracurricularSchedule(activityWeek([3, 4]), activityModel);
+  assert.equal(crossing.length, 1);
+  assert.equal(crossing[0].rule, 'R23');
+  assert.match(crossing[0].message, /crosses a Break or Lunch/);
   const model3 = { ...activityModel, subjects: activityModel.subjects.map(subject => subject.id === 'act' ? { ...subject, theoryPeriods: 3 } : subject) };
   assert.deepEqual(checkExtracurricularSchedule(activityWeek([2, 3, 4]), model3), []);
 });
@@ -391,8 +394,8 @@ test('allows a continuous extracurricular block to use the final two periods', (
   assert.equal(result.diagnostics.some(item => item.rule === 'R23'), false);
 });
 
-test('keeps an extracurricular block as consecutive periods starting at Period 3 or later', () => {
-  const allowedPairs = new Set(['2-3', '3-4', '4-5', '5-6', '6-7']);
+test('keeps a 2-period extracurricular block inside a break-free run from Period 3 onward', () => {
+  const allowedPairs = new Set(['2-3', '4-5', '6-7']);
   for (const seed of Array.from({ length: 20 }, (_, index) => index)) {
     const model = {
       classes: ['AIDS'], settings: { scheduleSeed: seed }, teachers: {},
