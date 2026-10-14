@@ -61,5 +61,8 @@ A subject must not form a continuous column or row pattern across different clas
 R22 — No empty periods when a full 48-period week is required (new)
 If a class requires all 48 teaching periods (input demand equals weekly capacity), the timetable must contain all 48 with no empty periods. Generation detects any empty slot, attempts to backfill the most under-allocated subject into it first (then any eligible subject), and rechecks all rules afterward; the CAPACITY diagnostic reports only what remains genuinely unfillable.
 
+R23 — Extracurricular consecutive period rule (new)
+This rule applies only to extracurricular activities. An extracurricular activity must be scheduled as one continuous block of its full required duration (for example 2, 3, or 4 consecutive periods) on a single day, starting at Period 3 or later. The entire duration must be allocated together — it may never contain gaps, be split across periods or days, or be shortened. A Break or Lunch is a non-teaching column, so an activity block spans the surrounding teaching periods just like a lab and is not broken by a Break or Lunch in between. If the required duration cannot fit in the teaching periods from Period 3 to Period 8, the activity is reported as unresolved (R23) instead of being split, shortened, or moved into an invalid slot.
+
 R24 — Placement and SDC equivalence (new)
 Placement, SDC, and Skill Development Course are equivalent labels. If any of these names is found in the input, the system must automatically recognize the subject as a Placement-type manually selected period and handle it exactly like the existing manually selected Placement/Library periods. The system must not create separate periods for Placement and SDC when they refer to the same input period.

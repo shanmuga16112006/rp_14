@@ -330,12 +330,27 @@ test('R23 rejects a shortened or split extracurricular block', () => {
   assert.match(gapped[0].message, /consecutive periods without a gap/);
 });
 
-test('R23 rejects an extracurricular block that crosses a Break or Lunch', () => {
-  const crossing = activityWeek([3, 4]);
-  const diagnostics = checkExtracurricularSchedule(crossing, activityModel);
-  assert.equal(diagnostics.length, 1);
-  assert.equal(diagnostics[0].rule, 'R23');
-  assert.match(diagnostics[0].message, /crosses a Break or Lunch/);
+test('R23 allows a continuous extracurricular block to span Break and Lunch columns', () => {
+  assert.deepEqual(checkExtracurricularSchedule(activityWeek([3, 4]), activityModel), []);
+  const model3 = { ...activityModel, subjects: activityModel.subjects.map(subject => subject.id === 'act' ? { ...subject, theoryPeriods: 3 } : subject) };
+  assert.deepEqual(checkExtracurricularSchedule(activityWeek([2, 3, 4]), model3), []);
+});
+
+test('places a 3-period extracurricular activity as one continuous same-day block from Period 3 onward', () => {
+  for (const length of [3, 4]) {
+    const model = {
+      classes: ['AIDS'], settings: { scheduleSeed: 4 }, teachers: {},
+      subjects: [{ id: 'act', className: 'AIDS', acronym: 'ACT', code: 'EC1', name: 'Activity', teacher: 'T1', theoryPeriods: length, labPeriods: 0, isExtracurricular: true }],
+      labs: []
+    };
+    const result = generateTimetable(model);
+    const placements = DAYS.flatMap(day => result.schedules.AIDS[day].filter(cell => cell?.subjectId === 'act').map(cell => ({ day, period: cell.period }))).sort((left, right) => left.period - right.period);
+    assert.equal(placements.length, length, `length ${length}`);
+    assert.equal(new Set(placements.map(item => item.day)).size, 1, `length ${length}`);
+    assert.equal(placements[0].period >= 2, true, `length ${length} start`);
+    assert.equal(placements.every((item, index) => index === 0 || item.period === placements[index - 1].period + 1), true, `length ${length} continuous`);
+    assert.equal(result.diagnostics.some(item => item.rule === 'R23'), false, `length ${length}`);
+  }
 });
 
 test('R23 is reported by checkSchedule for a hand-built invalid extracurricular block', () => {
@@ -376,8 +391,8 @@ test('allows a continuous extracurricular block to use the final two periods', (
   assert.equal(result.diagnostics.some(item => item.rule === 'R23'), false);
 });
 
-test('keeps an extracurricular block inside one break-free teaching run from Period 3 onward', () => {
-  const allowedPairs = new Set(['2-3', '4-5', '6-7']);
+test('keeps an extracurricular block as consecutive periods starting at Period 3 or later', () => {
+  const allowedPairs = new Set(['2-3', '3-4', '4-5', '5-6', '6-7']);
   for (const seed of Array.from({ length: 20 }, (_, index) => index)) {
     const model = {
       classes: ['AIDS'], settings: { scheduleSeed: seed }, teachers: {},
@@ -394,10 +409,10 @@ test('keeps an extracurricular block inside one break-free teaching run from Per
   }
 });
 
-test('reports a long extracurricular as unresolved instead of splitting it across breaks', () => {
+test('reports a long extracurricular as unresolved instead of splitting it across days', () => {
   const model = {
     classes: ['AIDS'], settings: { scheduleSeed: 2 }, teachers: {},
-    subjects: [{ id: 'camp', className: 'AIDS', acronym: 'CAMP', code: 'EC2', name: 'Camp', teacher: 'T1', theoryPeriods: 4, labPeriods: 0, isExtracurricular: true }],
+    subjects: [{ id: 'camp', className: 'AIDS', acronym: 'CAMP', code: 'EC2', name: 'Camp', teacher: 'T1', theoryPeriods: 7, labPeriods: 0, isExtracurricular: true }],
     labs: []
   };
   const result = generateTimetable(model);
@@ -761,7 +776,7 @@ test('stops with exact R16 reason when the fixed lab Starting Period is outside 
   assert.equal(DAYS.flatMap(day => result.schedules.AIDS[day]).filter(Boolean).length, 0);
 });
 
-test('stops with exact R23 reason when a continuous extracurricular cannot fit one break-free block', () => {
+test('stops with exact R23 reason when a continuous extracurricular cannot fit the teaching day', () => {
   const model = {
     classes: ['AIDS'], settings: { days: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] }, teachers: {},
     subjects: [{ id: 'a', className: 'AIDS', acronym: 'ACT', code: 'AC1', name: 'Activity', teacher: 'T1', theoryPeriods: 8, isExtracurricular: true, extracurricularPlacement: 'continuous' }],
@@ -771,7 +786,7 @@ test('stops with exact R23 reason when a continuous extracurricular cannot fit o
   const blocker = result.diagnostics.find(item => item.rule === 'R23' && item.severity === 'error');
   assert.ok(blocker);
   assert.match(blocker.message, /needs 8 consecutive periods/);
-  assert.match(blocker.message, /longest uninterrupted teaching block after Period 2 is only 2 periods/);
+  assert.match(blocker.message, /only 6 teaching periods are available from Period 3 to Period 8/);
   assert.equal(DAYS.flatMap(day => result.schedules.AIDS[day]).filter(Boolean).length, 0);
 });
 
